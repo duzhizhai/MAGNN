@@ -6,14 +6,16 @@ from models import GAT
 from utils import process
 from geo_dataProcess import load_obj, process_data, geo_accAT161
 
-checkpt_file = 'pre_trained/geo_cmu/mod_cmu.ckpt'
+from sklearn.metrics import recall_score, precision_score, f1_score
+
+checkpt_file = 'geo_data/model/mod_cmu.ckpt'
 
 dataset = './geo_data/cmu/dump_doc_dim_512.pkl'
 
 # training params
 batch_size = 1
 nb_epochs = 100000
-patience = 100
+patience = 30
 lr = 0.05          # learning rate
 l2_coef = 0.0005    # weight decay
 hid_units = [4]     # numbers of hidden units per each attention head in each layer
@@ -123,7 +125,7 @@ with tf.Graph().as_default():
             vl_size = features.shape[0]
 
             while vl_step * batch_size < vl_size:
-                loss_value_vl, logit_value = sess.run([loss, log_resh],
+                loss_value_vl, logit_value, lab_val = sess.run([loss, log_resh, lab_resh],
                     feed_dict={
                         ftr_in: features[vl_step*batch_size:(vl_step+1)*batch_size],
                         bias_in: biases[vl_step*batch_size:(vl_step+1)*batch_size],
@@ -135,10 +137,17 @@ with tf.Graph().as_default():
                 val_loss_avg += loss_value_vl
                 val_acc_avg += acc_vl
                 vl_step += 1
+                # calculate recall, precision and f1-score
+                lab_val = np.argmax(lab_val, axis=1)[idx_val]
+                logits_value = np.argmax(logit_value, axis=1)[idx_val]
+                recall = recall_score(lab_val, logits_value, average='macro')
+                precision = precision_score(lab_val, logits_value, average='macro')
+                f_value = f1_score(lab_val, logits_value, average='macro')
 
             print('epoch %d\t Training: loss = %.5f, acc@161 = %.5f | Val: loss = %.5f, acc@161 = %.5f' %
                     (epoch, train_loss_avg/tr_step, train_acc_avg/tr_step,
                     val_loss_avg/vl_step, val_acc_avg/vl_step))
+            print(f"recall:{recall}, precision:{precision}, f1-score:{f_value}")
 
             if val_acc_avg/vl_step >= vacc_mx or val_loss_avg/vl_step <= vlss_mn:
                 if val_acc_avg/vl_step >= vacc_mx and val_loss_avg/vl_step <= vlss_mn:
@@ -168,7 +177,7 @@ with tf.Graph().as_default():
         ts_size = features.shape[0]
 
         while ts_step * batch_size < ts_size:
-            loss_value_ts, logit_value = sess.run([loss, log_resh],
+            loss_value_ts, logit_value, lab_test = sess.run([loss, log_resh, lab_resh],
                 feed_dict={
                     ftr_in: features[ts_step*batch_size:(ts_step+1)*batch_size],
                     bias_in: biases[ts_step*batch_size:(ts_step+1)*batch_size],
@@ -180,7 +189,14 @@ with tf.Graph().as_default():
             ts_loss += loss_value_ts
             ts_acc += acc_ts
             ts_step += 1
+            # calculate recall, precision and f1-score
+            lab_val = np.argmax(lab_val, axis=1)[idx_test]
+            logits_value = np.argmax(logit_value, axis=1)[idx_test]
+            recall = recall_score(lab_val, logits_value, average='macro')
+            precision = precision_score(lab_val, logits_value, average='macro')
+            f_value = f1_score(lab_val, logits_value, average='macro')
 
         print('Test loss:', ts_loss/ts_step, '; Test acc@161:', ts_acc/ts_step)
+        print(f"recall:{recall}, precision:{precision}, f1-score:{f_value}")
 
         sess.close()
